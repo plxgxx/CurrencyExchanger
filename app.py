@@ -20,11 +20,17 @@ def get_data(querry:str):
 def Homepage():
     return "<p>Hello! This is the homepage</p>"
 
+
+@app.route('/currency/list', methods = ['GET'])
+def Currency_List():
+    res = get_data(f"select * from Currency") # Виклик інфи
+    return res
+
 # 1page
-@app.route('/currency', methods=['GET', 'DELETE', 'POST', 'PUT'])
+@app.route('/currency/rating', methods=['GET', 'DELETE', 'POST', 'PUT'])
 def Currency_review():
     if request.method == 'GET':
-        res = get_data(f"select round(avg(Rating), 1), CurrencyName from Review GROUP by CurrencyName")
+        res = get_data(f"select round(avg(Rating), 1), CurrencyName from Review GROUP by CurrencyName") #Виклик інфи
         return res
     else:
         pass
@@ -40,7 +46,7 @@ def currency_list(currency_name):
 def trade_pair(currency_name1, currency_name2):
     if request.method == 'GET':
         res = get_data(f"""SELECT round((SELECT NameToUSDPrice from Currency WHERE Date = '12/08/2022' and Name = '{currency_name1}')/
-        (SELECT NameToUSDPrice from Currency WHERE Date = '12/08/2022' and Name = '{currency_name2}'), 2)""")
+        (SELECT NameToUSDPrice from Currency WHERE Date = '12/08/2022' and Name = '{currency_name2}'), 2)""")# Виклик інфи
         return res
     else:
         pass
@@ -48,8 +54,9 @@ def trade_pair(currency_name1, currency_name2):
 # 5page
 @app.route('/user/<id>', methods = ['GET'])
 def User_Info(id):
-    res = get_data(f"select * from User where id = '{id}'")
+    res = get_data(f"select * from User where id = '{id}'") # Виклик інфи
     return res
+
 
 
 
