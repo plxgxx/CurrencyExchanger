@@ -1,3 +1,5 @@
+import datetime
+
 from flask import Flask
 from flask import request
 import sqlite3
@@ -8,6 +10,7 @@ import sqlite3
 
 app = Flask(__name__)
 
+date_now  = datetime.datetime.now().strftime("%d.%m.%Y")
 def dict_factory(cursor, row):
     d = {}
     for idx, col in enumerate(cursor.description):
@@ -53,7 +56,7 @@ def currency_info(currency_name):
 @app.route('/currency/trade/<currency_name1>X<currency_name2>', methods = ['GET', 'POST'])
 def trade_pair(currency_name1, currency_name2):
     if request.method == 'GET':
-        res = get_data(f"""SELECT round((SELECT NameToUSDPrice from Currency WHERE Date = '12/08/2022' and Name = '{currency_name1}')/
+        res = get_data(f"""SELECT round((SELECT NameToUSDPrice from Currency WHERE Date = '{date_now}' and Name = '{currency_name1}')/
         (SELECT NameToUSDPrice from Currency WHERE Date = '12/08/2022' and Name = '{currency_name2}'), 2)""")# Виклик інфи
         return res
     else:
@@ -77,9 +80,8 @@ def add_currency_rating(currency_name):
 @app.post('/currency/trade/<currency_name1>x<currency_name2>')
 def exchange(currency_name1, currency_name2):
     request_data = request.get_json()
-    user_id = 2
+    user_id = 1
     amount1 = request_data['amount']
-    date_time = request_data['datetime']
     OperType = request_data['OperType']
     fee = request_data['fee']
 
@@ -93,6 +95,7 @@ def exchange(currency_name1, currency_name2):
     balance_value1 = user_balance1[0]['balance']
     balance_value2 = user_balance2[0]['balance']
 
+
     needed_exchanger_balance = amount1 * curr1_cost_to_usd / curr2_cost_to_usd
 
     exchanger_balance = act_currency2[0]['Amount']
@@ -100,13 +103,13 @@ def exchange(currency_name1, currency_name2):
 
     if (user_balance1[0]['balance'] >= amount1) and (exchanger_balance >= needed_exchanger_balance):
         get_data(f"UPDATE Currency set Amount = {exchanger_balance - needed_exchanger_balance} where date = {act_currency2[0]['Date']} and CurrencyName = '{currency_name2}'")
-        get_data(f"UPDATE Currency set Amount = {act_currency1[0]['Amount'] + amount1} where date = {act_currency2[0]['Date']} and CurrencyName = '{currency_name1}'")
+        get_data(f"UPDATE Currency set Amount = {act_currency1[0]['Amount'] + amount1} where date = {act_currency1[0]['Date']} and CurrencyName = '{currency_name1}'")
         get_data(f"UPDATE Account set balance = {user_balance1[0]['balance']  -  amount1} where User_id = {user_id} and Currencyname = '{currency_name1}'")
         get_data(f"UPDATE Account set balance = {user_balance2[0]['balance'] + needed_exchanger_balance} where User_id = {user_id} and Currencyname = '{currency_name2}'")
 
         get_data(f"""INSERT into Transac
                 ( User,      OperationType, AmountofGivenCurrency, CurrencyTypeofGivingOper, CurrencyTypeofRecievingOper,      DateTime,    AmountofRecievedCurrency,     Fee, BalanceofGivingOper, BalanceofRecievingOper)values 
-                ('{user_id}','{OperType}','    {amount1}',          '{currency_name1}',          '{currency_name2}',      '{date_time}',' {needed_exchanger_balance}', '{fee}', '{balance_value1}',   '{balance_value2}' )""")
+                ('{user_id}','{OperType}','    {amount1}',          '{currency_name1}',          '{currency_name2}',      '{date_now}',' {needed_exchanger_balance}', '{fee}', '{balance_value1}',   '{balance_value2}' )""")
         return 'ok'
 
     else:
