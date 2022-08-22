@@ -8,10 +8,18 @@ import sqlite3
 
 app = Flask(__name__)
 
-def get_data(querry:str):
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+
+def get_data(querry):
     conn = sqlite3.connect('Exchanger.sqlite3')
+    conn.row_factory = dict_factory
     cursor = conn.execute(querry)
     result = cursor.fetchall()
+    conn.commit()
     conn.close()
     return result
 
@@ -37,7 +45,7 @@ def Currency_review():
 
 # 2page
 @app.route('/currency/<currency_name>', methods = ['GET'])
-def currency_list(currency_name):
+def currency_info(currency_name):
     res = get_data(f"select * from Currency where Name ='{currency_name}'")
     return res
 
@@ -58,7 +66,46 @@ def User_Info(id):
     return res
 
 
+@app.post('/currency/<currency_name>/rating')
+def add_currency_rating(currency_name):
+    request_data = request.get_json()
+    rating = request_data['Rating']
+    comment = request_data['Comment']
+    res = get_data(f"insert into Review (CurrencyName, Rating, Comment) values ('{currency_name}', '{rating}', '{comment}')")
+    return res
 
+@app.post('/currency/trade/<currency_name1>x<currency_name2>')
+def exchange(currency_name1, currency_name2):
+    request_data = request.get_json()
+    user_id = 1
+    amount1 = request_data['amount']
+    date_time = request_data['datetime']
+    OperType = request_data['OperType']
+    fee = request_data['fee']
+
+    user_balance1 = get_data(f"""select balance from Account where User_id = '{user_id}' and CurrencyName = '{currency_name1}' """)
+    user_balance2 = get_data(f"""select balance from Account where User_id = '{user_id}' and CurrencyName = '{currency_name2}' """)
+    act_currency1 = get_data(f"select * from Currency where CurrencyName = '{currency_name1}' ORDER BY Date DESC limit 1")
+    curr1_cost_to_usd = act_currency1[0]['NameToUSDPrice']
+    act_currency2 = get_data(f"select * from Currency where CurrencyName = '{currency_name2}' ORDER BY Date DESC limit 1")
+    curr2_cost_to_usd = act_currency2[0]['NameToUSDPrice']
+
+    needed_exchanger_balance = amount1 * curr1_cost_to_usd / curr2_cost_to_usd
+
+    exchanger_balance = act_currency2[0]['Amount']
+
+    if (user_balance1[0]['balance'] >= amount1) and (exchanger_balance >= needed_exchanger_balance):
+        get_data(f"UPDATE Currency set Amount = {exchanger_balance - needed_exchanger_balance} where date = {act_currency2[0]['Date']} and CurrencyName = '{currency_name2}'")
+        get_data(f"UPDATE Currency set Amount = {act_currency1[0]['Amount'] + amount1} where date = {act_currency2[0]['Date']} and CurrencyName = '{currency_name1}'")
+        get_data(f"UPDATE Account set balance = {user_balance1[0]['balance']  -  amount1} where User_id = {user_id} and Currencyname = '{currency_name1}'")
+        get_data(f"UPDATE Account set balance = {user_balance2[0]['balance'] + needed_exchanger_balance} where User_id = {user_id} and Currencyname = '{currency_name2}'")
+
+        get_data(f"""INSERT into Transac
+                (User,      OperationType, AmountofGivenCurrency, CurrencyTypeofGivingOper, CurrencyTypeofRecievingOper,      DateTime,    AmountofRecievedCurrency,     Fee, BalanceofGivingOper, BalanceofRecievingOper)values 
+                ('{user_id}','{OperType}','    {amount1}',          '{currency_name1}',          '{currency_name2}',      '{date_time}',' {needed_exchanger_balance}', '{fee}', '{user_balance1}',   '{user_balance2}' )""")
+        return 'ok'
+    else:
+        return 'not ok'
 
 # 6page
 @app.route('/user/transfer', methods = ['POST'])
