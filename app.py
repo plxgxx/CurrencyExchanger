@@ -1,30 +1,25 @@
 import datetime
-
 from flask import Flask
 from flask import request
-import sqlite3
+from sqlalchemy import func, create_engine
+from sqlalchemy.orm import sessionmaker
+import models
+from models import db, User, Transac, Review, Deposit, Currency, Account
+
+
+app: Flask = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///Exchanger.sqlite3'
+db.init_app(app)
+engine = create_engine('sqlite:///Exchanger.sqlite3')
+Session = sessionmaker(bind = engine)
+session = Session()
+date_now = datetime.datetime.now().strftime("%d-%m-%Y")
 
 
 
 
 
-app = Flask(__name__)
 
-date_now  = datetime.datetime.now().strftime("%d.%m.%Y")
-def dict_factory(cursor, row):
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col[0]] = row[idx]
-    return d
-
-def get_data(querry):
-    conn = sqlite3.connect('Exchanger.sqlite3')
-    conn.row_factory = dict_factory
-    cursor = conn.execute(querry)
-    result = cursor.fetchall()
-    conn.commit()
-    conn.close()
-    return result
 
 # homepage
 @app.route("/")
@@ -32,109 +27,109 @@ def Homepage():
     return "<p>Hello! This is the homepage</p>"
 
 
-@app.route('/currency/list', methods = ['GET'])
+@app.route('/currency/list', methods=['GET'])#Works
 def Currency_List():
-    res = get_data(f"select * from Currency") # Виклик інфи
-    return res
+    result = Currency.query.all()
+    return [itm.to_dict() for itm in result]
 
-# 1page
-@app.route('/currency/rating', methods=['GET', 'DELETE', 'POST', 'PUT'])
-def Currency_review():
-    if request.method == 'GET':
-        res = get_data(f"select round(avg(Rating), 1), CurrencyName from Review GROUP by CurrencyName") #Виклик інфи
-        return res
-    else:
-        pass
 
 # 2page
-@app.route('/currency/<currency_name>', methods = ['GET'])
+@app.route('/currency/<currency_name>', methods=['GET'])#Works
 def currency_info(currency_name):
-    res = get_data(f"select * from Currency where Name ='{currency_name}'")
-    return res
+    res = Currency.query.filter_by(CurrencyName=currency_name)
+    return [itm.to_dict() for itm in res]
+
 
 # 3page
-@app.route('/currency/trade/<currency_name1>X<currency_name2>', methods = ['GET', 'POST'])
+@app.get('/currency/trade/<currency_name1>X<currency_name2>')#Works
 def trade_pair(currency_name1, currency_name2):
-    if request.method == 'GET':
-        res = get_data(f"""SELECT round((SELECT NameToUSDPrice from Currency WHERE Date = '{date_now}' and Name = '{currency_name1}')/
-        (SELECT NameToUSDPrice from Currency WHERE Date = '12/08/2022' and Name = '{currency_name2}'), 2)""")# Виклик інфи
-        return res
-    else:
-        pass
+    res = round((Currency.query.filter_by(CurrencyName=currency_name1,
+                                               Date=date_now).first().NameToUSDPrice) / (
+                     Currency.query.filter_by(CurrencyName=currency_name2,
+                                              Date=date_now).first().NameToUSDPrice), 2)
+    return f"The cost of {currency_name1} to {currency_name2} : {res}"
+
 
 # 5page
-@app.route('/user/<id>', methods = ['GET'])
-def User_Info(id):
-    res = get_data(f"select * from User where id = '{id}'") # Виклик інфи
-    return res
+@app.route('/users', methods=['GET'])#works
+def get_users():
+    result = User.query.all()
+    return [itm.to_dict() for itm in result]
 
 
-@app.post('/currency/<currency_name>/rating')
+@app.route('/currency/<currency_name>/rating', methods = ['GET', 'POST'])#works
 def add_currency_rating(currency_name):
-    request_data = request.get_json()
-    rating = request_data['Rating']
-    comment = request_data['Comment']
-    res = get_data(f"insert into Review (CurrencyName, Rating, Comment) values ('{currency_name}', '{rating}', '{comment}')")
-    return res
+    if request.method == 'POST':
+        request_data = request.get_json()
+        rating = request_data['Rating']
+        comment = request_data['Comment']
+        rating_piece = Review(CurrencyName=currency_name, Rating=rating, Comment=comment)
+        db.session.add(rating_piece)
+        db.session.commit()
+        return "ok!"
+    else:
+        all_ratings = Review.query.all()
+        currency_rating = dict(db.session.querry(
+            db.func.avg(models.Review.Rating).lable('rate').filter(models.Review.CurrencyName == currency_name)
+        ).first())['rate']
+        return f"Ratings of {currency_name}: {[itm.to_dict() for itm in all_ratings]}, average: {currency_rating}"
 
-@app.post('/currency/trade/<currency_name1>x<currency_name2>')
+
+@app.post('/currency/trade/<currency_name1>x<currency_name2>')#Works
 def exchange(currency_name1, currency_name2):
     request_data = request.get_json()
-    user_id = 1
+    user_id = request_data['user_id']
     amount1 = request_data['amount']
     OperType = request_data['OperType']
     fee = request_data['fee']
 
-    user_balance1 = get_data(f"""select balance from Account where User_id = '{user_id}' and CurrencyName = '{currency_name1}' """)
-    user_balance2 = get_data(f"""select balance from Account where User_id = '{user_id}' and CurrencyName = '{currency_name2}' """)
-    act_currency1 = get_data(f"select * from Currency where CurrencyName = '{currency_name1}' ORDER BY Date DESC limit 1")
-    curr1_cost_to_usd = act_currency1[0]['NameToUSDPrice']
-    act_currency2 = get_data(f"select * from Currency where CurrencyName = '{currency_name2}' ORDER BY Date DESC limit 1")
+    user_balance1 = Account.query.filter_by(CurrencyName=currency_name1, User_id=user_id).first()
+    act_currency1 = Currency.query.filter_by(CurrencyName=currency_name1, Date=date_now).first()
+    act_currency2 = Currency.query.filter_by(CurrencyName=currency_name2, Date=date_now).first()
 
-    curr2_cost_to_usd = act_currency2[0]['NameToUSDPrice']
-    balance_value1 = user_balance1[0]['balance']
-    balance_value2 = user_balance2[0]['balance']
+    needed_exchanger_balance = (amount1 * act_currency1.NameToUSDPrice / act_currency2.NameToUSDPrice)
+
+    if act_currency2.Amount >= needed_exchanger_balance:
+        if user_balance1.balance >= amount1:
+            new_userbalance1 = user_balance1.balance - amount1
+            Account.query.filter_by(User_id=user_id, CurrencyName=currency_name1).update(dict(balance=new_userbalance1))
+
+            user_balance2 = Account.query.filter_by(CurrencyName=currency_name2, User_id=user_id).first()
+            if user_balance2 is None:
+                created_balance = Account(User_id=user_id, balance=needed_exchanger_balance,
+                                          CurrencyName=currency_name2)
+                db.session.add(created_balance)
+            elif user_balance2 is not None:
+                new_userbalance2 = user_balance2.balance + needed_exchanger_balance
+                user_balance2.balance = new_userbalance2
 
 
-    needed_exchanger_balance = amount1 * curr1_cost_to_usd / curr2_cost_to_usd
 
-    exchanger_balance = act_currency2[0]['Amount']
+            new_exchangerbalance2 = "{:.2f}".format(act_currency2.Amount - needed_exchanger_balance)
+            act_currency2.Amount = new_exchangerbalance2
 
+            new_exchangerbalance1 = act_currency1.Amount + amount1
+            act_currency1.Amount = new_exchangerbalance1
 
-    if (user_balance1[0]['balance'] >= amount1) and (exchanger_balance >= needed_exchanger_balance):
-        get_data(f"UPDATE Currency set Amount = {exchanger_balance - needed_exchanger_balance} where date = {act_currency2[0]['Date']} and CurrencyName = '{currency_name2}'")
-        get_data(f"UPDATE Currency set Amount = {act_currency1[0]['Amount'] + amount1} where date = {act_currency1[0]['Date']} and CurrencyName = '{currency_name1}'")
-        get_data(f"UPDATE Account set balance = {user_balance1[0]['balance']  -  amount1} where User_id = {user_id} and Currencyname = '{currency_name1}'")
-        get_data(f"UPDATE Account set balance = {user_balance2[0]['balance'] + needed_exchanger_balance} where User_id = {user_id} and Currencyname = '{currency_name2}'")
-
-        get_data(f"""INSERT into Transac
-                ( User,      OperationType, AmountofGivenCurrency, CurrencyTypeofGivingOper, CurrencyTypeofRecievingOper,      DateTime,    AmountofRecievedCurrency,     Fee, BalanceofGivingOper, BalanceofRecievingOper)values 
-                ('{user_id}','{OperType}','    {amount1}',          '{currency_name1}',          '{currency_name2}',      '{date_now}',' {needed_exchanger_balance}', '{fee}', '{balance_value1}',   '{balance_value2}' )""")
-        return 'ok'
-
+            balance_value1 = user_balance1.balance
+            balance_value2 = user_balance2.balance
+            successfultransac = Transac(User=user_id, OperationType=OperType,
+                                        AmountofGivenCurrency=amount1,
+                                        CurrencyTypeofGivingOper=currency_name1,
+                                        CurrencyTypeofRecievingOper=currency_name2,
+                                        DateTime=date_now, AmountofRecievedCurrency=needed_exchanger_balance,
+                                        Fee=fee, BalanceofGivingOper=balance_value1,
+                                        BalanceofRecievingOper=balance_value2)
+            db.session.add(successfultransac)
+            db.session.commit()
+            return "Successful transaction!"
+        else:
+            return "Not enough funds on user balance"
     else:
-        return 'not ok'
+        return "Not enough funds in exchanger"
 
-# 6page
-@app.route('/user/transfer', methods = ['POST'])
-def Transfer_Operation():
-    return "<p>Here will be page for performing transfer operations</p>"
 
-@app.route('/user/history', methods = ['GET'])
-def User_History_Page():
-    return "<p>Here will be page representing history of user activities including deposits offers transfers etc.</p>"
 
-@app.route('/user/deposit', methods = ['GET', 'POST'])
-def Deposit_Page():
-    return "<p>Here will be page with ability to deposit money </p>"
-
-@app.route('/user/deposit/<deposit_id>', methods = ['GET'])
-def Current_Deposit():
-    return "<p>Here will be page showing info about certain deposit</p>"
-
-@app.route('/deposit/<currency_name>', methods = ['POST'])
-def MakeA_Deposit():
-    return "<p>Here will be page performing an operation of deposit in certain currency</p>"
 
 if __name__ == '__main__':
     app.run()
