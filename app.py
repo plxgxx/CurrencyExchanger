@@ -1,8 +1,7 @@
 import datetime
 from flask import Flask
 from flask import request
-from sqlalchemy import func, create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import func
 import models
 from models import db, User, Transac, Review, Deposit, Currency, Account
 
@@ -10,9 +9,6 @@ from models import db, User, Transac, Review, Deposit, Currency, Account
 app: Flask = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///Exchanger.sqlite3'
 db.init_app(app)
-engine = create_engine('sqlite:///Exchanger.sqlite3')
-Session = sessionmaker(bind = engine)
-session = Session()
 date_now = datetime.datetime.now().strftime("%d-%m-%Y")
 
 
@@ -69,10 +65,15 @@ def add_currency_rating(currency_name):
         return "ok!"
     else:
         all_ratings = Review.query.all()
-        currency_rating = dict(db.session.querry(
-            db.func.avg(models.Review.Rating).lable('rate').filter(models.Review.CurrencyName == currency_name)
-        ).first())['rate']
-        return f"Ratings of {currency_name}: {[itm.to_dict() for itm in all_ratings]}, average: {currency_rating}"
+        currency_rating = dict(
+            db.session.query(
+                db.func.avg(models.Review.Rating).label('rate')
+            ).filter(
+                models.Review.CurrencyName == currency_name
+            ).first()
+        )['rate']
+        rate_history = [itm.to_dict() for itm in all_ratings]
+        return {"Rate_History": rate_history, "average": currency_rating, "currency_name": currency_name}
 
 
 @app.post('/currency/trade/<currency_name1>x<currency_name2>')#Works
