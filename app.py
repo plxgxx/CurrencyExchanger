@@ -133,4 +133,4 @@ def exchange(currency_name1, currency_name2):
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host='0.0.0.0')
