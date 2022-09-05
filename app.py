@@ -1,15 +1,22 @@
 import datetime
+import os
+
 from flask import Flask
 from flask import request
 from sqlalchemy import func
+from flask_migrate import Migrate
 import models
 from models import db, User, Transac, Review, Deposit, Currency, Account
 
 
 app: Flask = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///Exchanger.sqlite3'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DB_CONNECTION_STR')
 db.init_app(app)
+migrate = Migrate(app, db)
 date_now = datetime.datetime.now().strftime("%d-%m-%Y")
+
+
+
 
 
 
